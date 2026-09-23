@@ -1,0 +1,317 @@
+"""PDF tech-pack report (reportlab / platypus)."""
+import os
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.platypus import (BaseDocTemplate, Flowable, Frame, Image,
+                                PageTemplate, Paragraph, Spacer, Table,
+                                TableStyle)
+
+from .flat import draw_pdf
+
+INK = colors.HexColor("#171717")
+ACCENT = colors.HexColor("#b4552d")
+LINEC = colors.HexColor("#d8d2c8")
+GRAY = colors.HexColor("#6b6b6b")
+PAPER = colors.HexColor("#fffdf9")
+
+PAGE_W, PAGE_H = A4
+ML = MR = 14 * mm
+MT = MB = 15 * mm
+USABLE = PAGE_W - ML - MR
+
+
+def hexcol(h):
+    h = h.lstrip("#")
+    return colors.Color(int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
+
+
+S = {
+    "brand": ParagraphStyle("brand", fontName="Helvetica-Bold", fontSize=17,
+                            textColor=INK, leading=20),
+    "sub": ParagraphStyle("sub", fontName="Helvetica", fontSize=10,
+                          textColor=INK, leading=13),
+    "meta": ParagraphStyle("meta", fontName="Helvetica", fontSize=8,
+                           textColor=INK, leading=11),
+    "h2": ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=11,
+                         textColor=INK, leading=14),
+    "num": ParagraphStyle("num", fontName="Helvetica-Bold", fontSize=11,
+                          textColor=ACCENT, leading=14),
+    "body": ParagraphStyle("body", fontName="Helvetica", fontSize=8,
+                           textColor=INK, leading=11),
+    "small": ParagraphStyle("small", fontName="Helvetica", fontSize=7.5,
+                            textColor=GRAY, leading=10),
+    "cell": ParagraphStyle("cell", fontName="Helvetica", fontSize=8,
+                           textColor=INK, leading=10.5),
+    "cellb": ParagraphStyle("cellb", fontName="Helvetica-Bold", fontSize=8,
+                            textColor=INK, leading=10.5),
+}
+
+
+class FlatFlowable(Flowable):
+    def __init__(self, flat_key, w):
+        super().__init__()
+        self.key = flat_key
+        self.w = w
+
+    def wrap(self, aw, ah):
+        return (self.w, self.w)
+
+    def draw(self):
+        draw_pdf(self.canv, self.key, 0, 0, self.w)
+
+
+def P(text, style="cell"):
+    return Paragraph(str(text), S[style])
+
+
+def table(data, widths, header=True, fs_align=None):
+    t = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
+    st = [
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("TEXTCOLOR", (0, 0), (-1, -1), INK),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    if header:
+        st += [("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+               ("LINEBELOW", (0, 0), (-1, 0), 0.9, INK)]
+    st.append(("LINEBELOW", (0, 1 if header else 0), (-1, -1), 0.35, LINEC))
+    t.setStyle(TableStyle(st))
+    return t
+
+
+def section(num, title):
+    t = Table([[P(f"{num:02d}", "num"), P(title, "h2")]],
+              colWidths=[10 * mm, USABLE - 10 * mm])
+    t.setStyle(TableStyle([
+        ("LINEBELOW", (0, 0), (-1, 0), 0.9, INK),
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return [Spacer(1, 6 * mm), t]
+
+
+def build_story(pack):
+    st = []
+    style = pack["style"]
+
+    # --- header block ---
+    st.append(P(f"{style['brand']}", "brand"))
+    st.append(Spacer(1, 1.5 * mm))
+    st.append(P(f"{style['style_name']}  ·  <b>{style['style_code']}</b>", "sub"))
+    st.append(Spacer(1, 3 * mm))
+    meta = [
+        ["Garment", style["garment"], "Season", style["season"]],
+        ["Date", style["date"], "Version", style["version"]],
+        ["Sample size", style["sample_size"], "Size range", style["size_range"]],
+        ["Units", pack["meta"]["units"], "Colourway", style["colourway"]],
+    ]
+    mt = Table(meta, colWidths=[26 * mm, USABLE / 2 - 26 * mm, 24 * mm, USABLE / 2 - 24 * mm])
+    mt.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("TEXTCOLOR", (0, 0), (0, -1), GRAY),
+        ("TEXTCOLOR", (2, 0), (2, -1), GRAY),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+    ]))
+    st.append(mt)
+    for n in style["notes"]:
+        st.append(P("• " + n, "small"))
+    st.append(Spacer(1, 2 * mm))
+    st.append(P("Generated by the Tech Pack Agent from a sample photo.", "small"))
+
+    # --- 1 style information ---
+    st += section(1, "Style information")
+    rows = [[P(k, "cellb"), P(v)] for k, v in [
+        ("Brand", style["brand"]), ("Style name", style["style_name"]),
+        ("Style code", style["style_code"]), ("Season", style["season"]),
+        ("Date", style["date"]), ("Version", style["version"]),
+        ("Sample size", style["sample_size"]), ("Size range", style["size_range"]),
+        ("Units", pack["meta"]["units"]), ("Colourway", style["colourway"]),
+    ]]
+    st.append(table(rows, [40 * mm, USABLE - 40 * mm], header=False))
+
+    # --- 2 technical drawings ---
+    st += section(2, "Technical drawings")
+    photo = pack.get("_photo_path")
+    photo_img = None
+    if photo and os.path.exists(photo):
+        iw, ih = pack["meta"]["image_size"]
+        pw = 52 * mm
+        ph = pw * ih / iw
+        if ph > 95 * mm:
+            ph = 95 * mm
+            pw = ph * iw / ih
+        photo_img = Image(photo, width=pw, height=ph)
+    flat_img = FlatFlowable(pack["drawings"]["flat"], 62 * mm)
+    dt = Table([[photo_img if photo_img else P("(no photo)"), flat_img]],
+               colWidths=[USABLE / 2, USABLE / 2])
+    dt.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+    st.append(dt)
+    st.append(Spacer(1, 2 * mm))
+    st.append(P("Detail close-ups:", "cellb"))
+    for d in pack["drawings"]["details"]:
+        st.append(P("• " + d, "cell"))
+    st.append(P(pack["drawings"]["photo_note"], "small"))
+
+    # --- 3 fabric ---
+    st += section(3, "Fabric specifications")
+    rows = [[P(k, "cellb"), P(v)] for k, v in pack["fabric"]["rows"]]
+    st.append(table(rows, [44 * mm, USABLE - 44 * mm], header=False))
+
+    # --- 4 BOM ---
+    st += section(4, "Bill of materials")
+    rows = [[P("Item", "cellb"), P("Material / specification", "cellb"), P("Qty per piece", "cellb")]]
+    for (i, spec, qty) in pack["bom"]["rows"]:
+        rows.append([P(i), P(spec), P(qty)])
+    st.append(table(rows, [42 * mm, USABLE - 42 * mm - 26 * mm, 26 * mm]))
+
+    # --- 5 measurements ---
+    st += section(5, "Garment measurements")
+    st.append(P(pack["measurements"]["note"], "small"))
+    st.append(Spacer(1, 1.5 * mm))
+    rows = [[P("Measurement", "cellb"), P("Where / how to measure", "cellb"),
+             P(f"Size {style['sample_size']}", "cellb"), P("Tolerance (±)", "cellb")]]
+    for (name, how, val, tol) in pack["measurements"]["rows"]:
+        rows.append([P(name), P(how), P(val), P(tol)])
+    st.append(table(rows, [40 * mm, 76 * mm, 26 * mm, USABLE - 142 * mm]))
+
+    # --- 6 grading ---
+    st += section(6, "Size grading")
+    sizes = pack["grading"]["sizes"]
+    widths = [46 * mm] + [14 * mm] * len(sizes) + [14 * mm]
+    rows = [[P("Measurement", "cellb")]] + [[s if not isinstance(s, str) else P(s)] for s in
+                                             [P(s, "cellb") for s in sizes] + [P("Step", "cellb")]]
+    rows = [ [P("Measurement", "cellb")] + [P(s, "cellb") for s in sizes] + [P("Step", "cellb")] ]
+    for row in pack["grading"]["rows"]:
+        name, vals, step = row[0], row[1:-1], row[-1]
+        rows.append([P(name)] + [P(v) for v in vals] + [P(step)])
+    st.append(table(rows, widths))
+    st.append(Spacer(1, 1.5 * mm))
+    st.append(P(pack["grading"]["rules"], "small"))
+
+    # --- 7 construction ---
+    st += section(7, "Construction details")
+    rows = [[P("Area", "cellb"), P("Stitch / method", "cellb"), P("Specification", "cellb")]]
+    for (area, stitch, spec) in pack["construction"]["rows"]:
+        rows.append([P(area), P(stitch), P(spec)])
+    st.append(table(rows, [40 * mm, 62 * mm, USABLE - 102 * mm]))
+    st.append(Spacer(1, 2.5 * mm))
+    rows = [[P("Thread / machine setting", "cellb"), P("Specification", "cellb")]]
+    for (k, v) in pack["construction"]["thread"]:
+        rows.append([P(k), P(v)])
+    st.append(table(rows, [48 * mm, USABLE - 48 * mm]))
+    st.append(Spacer(1, 2.5 * mm))
+    rows = [[P("Stitch code", "cellb"), P("Type", "cellb"), P("SPC", "cellb"), P("Typical use", "cellb")]]
+    for (code, name, spc, use) in pack["construction"]["stitches"]:
+        rows.append([P(code), P(name), P(spc), P(use)])
+    st.append(table(rows, [24 * mm, 60 * mm, 34 * mm, USABLE - 118 * mm]))
+
+    # --- 8 colours & artwork ---
+    st += section(8, "Colours and artwork")
+    rows = [[P("Role", "cellb"), P("Colour", "cellb"), P("Hex", "cellb"),
+             P("Coverage", "cellb"), P("Suggested Pantone TCX (verify on swatch)", "cellb")]]
+    for (role, name, hx, cov, pant) in pack["colours"]["colorway_rows"]:
+        rows.append([P(role), P(name), P(hx), P(cov), P(pant)])
+    t = table(rows, [24 * mm, 30 * mm, 22 * mm, 20 * mm, USABLE - 96 * mm])
+    for i, (role, name, hx, cov, pant) in enumerate(pack["colours"]["colorway_rows"], start=1):
+        t.setStyle(TableStyle([("BACKGROUND", (1, i), (1, i), hexcol(hx)),
+                               ("TEXTCOLOR", (1, i), (1, i), colors.white),
+                               ("FONTNAME", (1, i), (1, i), "Helvetica-Bold")]))
+    st.append(t)
+    st.append(Spacer(1, 2.5 * mm))
+    rows = [[P("Artwork", "cellb"), P("Size & placement (TBC)", "cellb"), P("File spec", "cellb")]]
+    for (a, spec, f) in pack["colours"]["artwork"]:
+        rows.append([P(a), P(spec), P(f)])
+    st.append(table(rows, [40 * mm, USABLE - 40 * mm - 44 * mm, 44 * mm]))
+    st.append(Spacer(1, 1.5 * mm))
+    st.append(P(pack["colours"]["requirements"], "small"))
+
+    # --- 9 labels & packaging ---
+    st += section(9, "Labels and packaging")
+    rows = [[P("Item", "cellb"), P("Specification", "cellb"), P("Placement / note", "cellb")]]
+    for (i, spec, pl) in pack["labels_packaging"]["rows"]:
+        rows.append([P(i), P(spec), P(pl)])
+    st.append(table(rows, [34 * mm, 84 * mm, USABLE - 118 * mm]))
+
+    # --- 10 sample feedback ---
+    st += section(10, "Sample feedback and revisions")
+    rows = [[P("#", "cellb"), P("Item", "cellb"), P("Comment", "cellb"),
+             P("Correction", "cellb"), P("Date", "cellb"), P("Status", "cellb")]]
+    for r in pack["sample_feedback"]["rows"]:
+        rows.append([P(x) for x in r])
+    st.append(table(rows, [8 * mm, 30 * mm, 62 * mm, 44 * mm, 20 * mm, USABLE - 164 * mm]))
+    st.append(Spacer(1, 2.5 * mm))
+    rows = [[P("Version", "cellb"), P("Date", "cellb"), P("Author", "cellb"), P("Notes", "cellb")]]
+    for r in pack["sample_feedback"]["revisions"]:
+        rows.append([P(x) for x in r])
+    st.append(table(rows, [18 * mm, 28 * mm, 34 * mm, USABLE - 80 * mm]))
+    st.append(Spacer(1, 2.5 * mm))
+    rows = [[P("Role", "cellb"), P("Name", "cellb"), P("Date", "cellb"), P("Signature", "cellb")]]
+    for (role, a, b, c) in pack["sample_feedback"]["approvals"]:
+        rows.append([P(role), P(a), P(b), P(c)])
+    st.append(table(rows, [50 * mm, 50 * mm, 30 * mm, USABLE - 130 * mm]))
+
+    if pack.get("ai") and pack["ai"].get("observations"):
+        st += section(11, "AI observations (reference only)")
+        obs = pack["ai"]["observations"]
+        rows = [[P(k, "cellb"), P(v)] for k, v in obs.items() if v not in ("", None, [])]
+        st.append(table(rows, [34 * mm, USABLE - 34 * mm], header=False))
+        st.append(Spacer(1, 1.5 * mm))
+        st.append(P("Automated vision-model observations (provider: %s). Always verify "
+                    "against the physical sample." % pack["ai"].get("provider", "?"), "small"))
+
+    st.append(Spacer(1, 8 * mm))
+    st.append(P("— end of tech pack —", "small"))
+    return st
+
+
+def generate_pdf(pack, job_dir, photo_path):
+    out = os.path.join(job_dir, "techpack.pdf")
+    doc = BaseDocTemplate(out, pagesize=A4, leftMargin=ML, rightMargin=MR,
+                          topMargin=MT, bottomMargin=MB,
+                          title=f"Tech Pack {pack['style']['style_code']}",
+                          author="Tech Pack Agent")
+    style = pack["style"]
+
+    def on_page(canv: pdfcanvas.Canvas, doc):
+        canv.saveState()
+        canv.setFillColor(PAPER)
+        canv.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
+        canv.setStrokeColor(LINEC)
+        canv.setLineWidth(0.5)
+        canv.line(ML, PAGE_H - 11 * mm, PAGE_W - MR, PAGE_H - 11 * mm)
+        canv.setFont("Helvetica", 7.5)
+        canv.setFillColor(GRAY)
+        canv.drawString(ML, PAGE_H - 9.5 * mm,
+                        f"{style['brand']} — {style['style_name']} ({style['style_code']})")
+        canv.drawRightString(PAGE_W - MR, PAGE_H - 9.5 * mm,
+                             f"TECH PACK · v{style['version']} · {pack['meta']['units']}")
+        canv.line(ML, 11 * mm, PAGE_W - MR, 11 * mm)
+        canv.drawString(ML, 8 * mm,
+                        f"{style['style_code']} · v{style['version']} · {style['date']}")
+        canv.drawRightString(PAGE_W - MR, 8 * mm, f"Page {canv.getPageNumber()}")
+        canv.restoreState()
+
+    frame = Frame(ML, MB, USABLE, PAGE_H - MT - MB, id="main")
+    doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=on_page)])
+    story = build_story({**pack, "_photo_path": photo_path})
+    doc.build(story)
+    return out

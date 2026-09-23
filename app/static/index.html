@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tech Pack Agent — from garment photo to production spec</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>✂</text></svg>">
+</head>
+<body>
+<header class="top">
+  <div class="brand">TECH PACK <em>Agent</em></div>
+  <div class="tag">Upload a garment photo → the 10 sections a manufacturer needs</div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <div id="drop" class="drop" tabindex="0" role="button" aria-label="Upload garment photo">
+      <input id="file" type="file" accept="image/*" hidden>
+      <div class="drop-inner" id="dropInner">
+        <div class="drop-ico">✂</div>
+        <div class="drop-title">Drop a garment photo</div>
+        <div class="drop-sub">or click to browse · JPG / PNG / WebP</div>
+      </div>
+      <img id="preview" alt="Garment preview" hidden>
+    </div>
+
+    <form id="form" autocomplete="off">
+      <div class="grid2">
+        <label>Brand
+          <input id="brand" placeholder="e.g. Acme Studio">
+        </label>
+        <label>Style name
+          <input id="style_name" placeholder="e.g. Box Tee">
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Style code
+          <input id="style_code" placeholder="auto if blank">
+        </label>
+        <label>Season
+          <input id="season" placeholder="auto if blank" list="seasons">
+        </label>
+      </div>
+      <datalist id="seasons">
+        <option value="SS27"></option><option value="FW26"></option>
+        <option value="FW27"></option><option value="SS28"></option>
+      </datalist>
+      <div class="grid2">
+        <label>Garment type
+          <select id="garment_type">
+            <option value="auto">Auto-detect</option>
+            <option value="tshirt">T-shirt (short sleeve)</option>
+            <option value="top">Top (long sleeve)</option>
+            <option value="shirt">Shirt (button-down)</option>
+            <option value="hoodie">Hoodie</option>
+            <option value="jacket">Jacket / outerwear</option>
+            <option value="pants">Jeans / trousers</option>
+            <option value="shorts">Shorts</option>
+            <option value="dress">Dress</option>
+            <option value="skirt">Skirt</option>
+          </select>
+        </label>
+        <label>Size range
+          <select id="size_range">
+            <option value="XS-XL" selected>XS – XL</option>
+            <option value="S-L">S – L</option>
+            <option value="S-XL">S – XL</option>
+            <option value="XS-XXL">XS – XXL</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid3">
+        <label>Sample size
+          <select id="sample_size">
+            <option>XS</option><option>S</option><option selected>M</option>
+            <option>L</option><option>XL</option><option>XXL</option>
+          </select>
+        </label>
+        <label>Units
+          <select id="units"><option>cm</option><option>in</option></select>
+        </label>
+        <label>Version
+          <select id="version"><option>1.0</option><option>2.0</option><option>3.0</option></select>
+        </label>
+      </div>
+      <div class="grid1">
+        <label>Date
+          <input type="date" id="date">
+        </label>
+      </div>
+      <button id="go" class="go" type="submit" disabled>Generate tech pack</button>
+      <p class="hint">Runs fully local. Set <code>OPENAI_API_KEY</code> or
+        <code>ANTHROPIC_API_KEY</code> on the server for an optional AI-vision pass.</p>
+    </form>
+
+    <div id="steps" class="steps" hidden></div>
+  </aside>
+
+  <section class="results">
+    <div id="empty" class="empty">
+      <div class="empty-mark">✂</div>
+      <h2>Your tech pack appears here</h2>
+      <p>Every section a manufacturer needs — style information, technical drawings,
+         fabric specifications, bill of materials, garment measurements with tolerance,
+         size grading, construction details, colours &amp; artwork, labels &amp; packaging,
+         and a sample feedback log.</p>
+    </div>
+    <div id="report" hidden></div>
+  </section>
+</main>
+
+<footer class="foot">
+  Tech Pack Agent · figures are standard production baselines — verify against the approved sample.
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
