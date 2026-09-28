@@ -1,0 +1,51 @@
+import { JSDOM, VirtualConsole } from 'jsdom';
+import { readFileSync } from 'fs';
+const html = readFileSync('dist/index.html','utf8');
+const js = readFileSync('dist/assets/' + html.match(/src="\/assets\/(index-[^"]+\.js)"/)[1],'utf8');
+const vc = new VirtualConsole();
+const errors = [];
+vc.on('jsdomError', e => { if(!/Could not parse CSS/.test(e.message)) errors.push('JSDOM: '+e.message + (e.detail?': '+e.detail:'')); });
+vc.on('error', (...a) => errors.push('console.error: '+a.join(' ')));
+const dom = new JSDOM(html.replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/,''), { url:'http://localhost/', runScripts:'outside-only', pretendToBeVisual:true, virtualConsole:vc });
+const w = dom.window;
+w.matchMedia = w.matchMedia || (()=>({matches:false,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){}}));
+w.scrollTo = ()=>{};
+try { w.eval(js); } catch(e){ errors.push('EVAL: '+e.message); }
+await new Promise(r=>setTimeout(r,600));
+const d = w.document;
+const q = s => d.querySelectorAll(s).length;
+console.log('sidebar:',q('.sidebar'),'| nav items:',q('.nav-item'),'| stat cards:',q('.stat-card'),'| map pins:',q('.map-pin'),'| incident cards:',q('.incident-card'),'| badges:',q('.badge'),'| buttons:',q('button'));
+console.log('active incidents text:', d.querySelector('.incidents-panel .panel-header h2')?.textContent);
+// open SOS modal
+d.querySelector('.heading-actions .button.primary').click();
+await new Promise(r=>setTimeout(r,200));
+console.log('sos modal:', q('.sos-button')===1 && q('.modal')===1);
+// hold SOS via pointer events (React synthetic)
+const sos = d.querySelector('.sos-button');
+const fire = (type) => { const e = new w.Event(type,{bubbles:true,cancelable:true}); e.pointerId = 1; sos.dispatchEvent(e); };
+fire('pointerdown');
+await new Promise(r=>setTimeout(r,2300));
+fire('pointerup');
+await new Promise(r=>setTimeout(r,300));
+console.log('sos sent state:', q('.sos-success')===1, '| new incident created:', /SK-10\d\d/.test(d.querySelector('.sos-success span')?.textContent||''));
+const review = [...d.querySelectorAll('.modal button')].find(b=>/Review test alert/.test(b.textContent));
+review.click();
+await new Promise(r=>setTimeout(r,200));
+console.log('detail modal open:', q('.detail-layout')===1, '| sim feed:', q('.simulated-feed')===1);
+const dispatch = [...d.querySelectorAll('.modal button')].find(b=>/Review & dispatch/.test(b.textContent));
+dispatch.click();
+await new Promise(r=>setTimeout(r,100));
+const confirm = [...d.querySelectorAll('.modal button')].find(b=>b.textContent.trim()==='Confirm dispatch');
+confirm.click();
+await new Promise(r=>setTimeout(r,300));
+console.log('dispatched (badge):', d.querySelector('.detail-status .badge')?.textContent);
+const arrive = [...d.querySelectorAll('.modal button')].find(b=>/Simulate ground arrival/.test(b.textContent));
+arrive.click(); await new Promise(r=>setTimeout(r,200));
+const resolve = [...d.querySelectorAll('.modal button')].find(b=>/Resolve demo incident/.test(b.textContent));
+resolve.click(); await new Promise(r=>setTimeout(r,300));
+console.log('resolved (badge):', d.querySelector('.detail-status .badge')?.textContent);
+console.log('drone freed:', [...d.querySelectorAll('.drone-id')].length>0);
+// spotlight confirm flow
+const spot = [...d.querySelectorAll('.support-controls button')].find(b=>/Spotlight/.test(b.textContent));
+console.log('spotlight disabled after resolve:', spot.disabled);
+console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
